@@ -15,6 +15,15 @@ typedef struct {
     int position;          /* 0=goleiro, 1-4=defesa, 5-8=meio, 9-10=ataque */
 } Player;
 
+/* Estrutura para o jogador especial do 3x3 */
+typedef struct {
+    float x, y;
+    bool active;
+} SpecialPlayer;
+
+static SpecialPlayer specialPlayer = { -70.0f, 0.0f, false };
+static bool ballMovementLocked = false;
+
 static Player players[22];  /* 11 por time */
 
 static float ballX = 0.0f;
@@ -26,6 +35,35 @@ static int scoreRight = 0;
 static float crowdPhase = 0.0f;
 static int g_winW = 1200;
 static int g_winH = 780;
+
+typedef struct {
+    int x, y, w, h;
+    bool hovered;
+    const char* label;
+} Button;
+
+static Button invaderButton = { 0, 0, 150, 40, false, "Activate Invader" };
+
+static void mouseClick(int button, int state, int x, int y) {
+    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+        if (x >= invaderButton.x && x <= invaderButton.x + invaderButton.w &&
+            y >= invaderButton.y && y <= invaderButton.y + invaderButton.h) {
+            
+            if (!specialPlayer.active) {
+                specialPlayer.active = true;
+                specialPlayer.x = -70.0f;
+                specialPlayer.y = 0.0f;
+                ballMovementLocked = true;
+            }
+        }
+    }
+}
+
+static void passiveMotion(int x, int y) {
+    invaderButton.hovered = (x >= invaderButton.x && x <= invaderButton.x + invaderButton.w &&
+                             y >= invaderButton.y && y <= invaderButton.y + invaderButton.h);
+    glutPostRedisplay();
+}
 
 /* Inicializa os jogadores com suas posições base */
 static void initializePlayers(void) {
@@ -444,6 +482,22 @@ static void drawGoalNet(float xFront, float xBack) {
     }
 }
 
+static void drawSpecialPlayer() {
+    if (specialPlayer.active) {
+        drawPlayer(specialPlayer.x, specialPlayer.y, 0); // Usa o mesmo template do jogador do time 0
+    }
+}
+
+static void updateSpecialPlayer() {
+    if (specialPlayer.active) {
+        specialPlayer.x += 1.5f; // Velocidade do jogador especial
+        if (specialPlayer.x > 70.0f) { // Se ele cruzou o campo
+            specialPlayer.active = false;
+            ballMovementLocked = false; // Destrava a bola
+        }
+    }
+}
+
 static void display(void) {
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -509,6 +563,7 @@ static void display(void) {
     drawGoalNet(52.5f, 54.5f);
 
     drawPlayers();
+    drawSpecialPlayer();
 
     // Sombra da bola no gramado.
     glColor3f(0.05f, 0.08f, 0.05f);
@@ -567,6 +622,35 @@ static void display(void) {
         glMatrixMode(GL_MODELVIEW);
     }
 
+    // Desenha o botão
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, (double)g_winW, (double)g_winH, 0.0, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    invaderButton.x = g_winW / 2 - invaderButton.w / 2;
+    invaderButton.y = g_winH - 60;
+
+    if (invaderButton.hovered) {
+        glColor3f(0.2f, 0.6f, 0.2f);
+    } else {
+        glColor3f(0.1f, 0.4f, 0.1f);
+    }
+    drawFilledRect(invaderButton.x, invaderButton.y, invaderButton.x + invaderButton.w, invaderButton.y + invaderButton.h);
+
+    glColor3f(1.0f, 1.0f, 1.0f);
+    int textW = glutBitmapLength(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)invaderButton.label);
+    drawTextPixels(invaderButton.x + (invaderButton.w - textW) / 2, invaderButton.y + 25, invaderButton.label);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+
     glutSwapBuffers();
 }
 
@@ -593,6 +677,8 @@ static void reshape(int w, int h) {
 }
 
 static void moveBall(float dx, float dy) {
+    if (ballMovementLocked) return; // Se o movimento da bola estiver travado, não faz nada
+
     const float fieldHalfW = 52.5f;
     const float fieldHalfH = 34.0f;
     const float goalHalfH = 3.66f;
@@ -692,6 +778,7 @@ static void timer(int value) {
         crowdPhase -= 2.0f * PI;
     }
     updatePlayerPositions();
+    updateSpecialPlayer(); // Atualiza o jogador especial
     glutPostRedisplay();
     glutTimerFunc(16, timer, 0);
 }
@@ -722,6 +809,8 @@ int main(int argc, char **argv) {
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
     glutSpecialFunc(special);
+    glutMouseFunc(mouseClick);
+    glutPassiveMotionFunc(passiveMotion);
     glutTimerFunc(16, timer, 0);
 
     glutMainLoop();
