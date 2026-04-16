@@ -1,6 +1,9 @@
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <GL/freeglut.h>
+
+#include "audio.h"
 
 #define PI 3.14159265358979323846f
 
@@ -11,6 +14,8 @@ static const float ballStep = 1.2f;
 static int scoreLeft = 0;
 static int scoreRight = 0;
 static float crowdPhase = 0.0f;
+static int g_winW = 1200;
+static int g_winH = 780;
 
 static float clampf(float value, float minV, float maxV) {
     if (value < minV) return minV;
@@ -83,6 +88,73 @@ static void drawText(float x, float y, const char *text) {
     while (*text != '\0') {
         glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *text);
         text++;
+    }
+}
+
+static void drawTextPixels(int x, int y, const char *text) {
+    glRasterPos2i(x, y);
+    while (*text != '\0') {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *text);
+        text++;
+    }
+}
+
+/* team: 0 = esquerda (vermelho), 1 = direita (azul). (x,y) = posição dos pés. */
+static void drawPlayer(float x, float y, int team) {
+    float jr, jg, jb;
+    if (team == 0) {
+        jr = 0.88f;
+        jg = 0.16f;
+        jb = 0.18f;
+    } else {
+        jr = 0.14f;
+        jg = 0.32f;
+        jb = 0.92f;
+    }
+
+    glColor3f(0.05f, 0.09f, 0.06f);
+    drawFilledCircle(x + 0.12f, y - 0.18f, 1.05f, 22);
+
+    glColor3f(jr, jg, jb);
+    drawFilledRect(x - 0.75f, y + 0.4f, x + 0.75f, y + 2.45f);
+
+    glLineWidth(2.4f);
+    glColor3f(0.12f, 0.12f, 0.14f);
+    glBegin(GL_LINES);
+    glVertex2f(x, y);
+    glVertex2f(x, y + 2.5f);
+    glVertex2f(x, y + 1.1f);
+    glVertex2f(x - 1.15f, y + 0.15f);
+    glVertex2f(x, y + 1.1f);
+    glVertex2f(x + 1.15f, y + 0.15f);
+    glEnd();
+
+    glColor3f(0.94f, 0.80f, 0.68f);
+    drawFilledCircle(x, y + 3.15f, 0.85f, 22);
+    glColor3f(0.72f, 0.58f, 0.48f);
+    drawCircle(x, y + 3.15f, 0.85f, 22);
+}
+
+static void drawPlayers(void) {
+    /* Time da esquerda (ataca para a direita) */
+    const float L[][2] = {
+        { -46.5f, 0.0f },   /* goleiro */
+        { -38.0f, -16.0f }, { -38.0f, -5.5f }, { -38.0f, 5.5f }, { -38.0f, 16.0f }, /* defesa */
+        { -26.0f, -14.0f }, { -26.0f, -4.0f }, { -26.0f, 4.0f }, { -26.0f, 14.0f }, /* meio */
+        { -14.0f, -8.0f }, { -14.0f, 8.0f }  /* ataque */
+    };
+    /* Time da direita */
+    const float R[][2] = {
+        { 46.5f, 0.0f },
+        { 38.0f, -16.0f }, { 38.0f, -5.5f }, { 38.0f, 5.5f }, { 38.0f, 16.0f },
+        { 26.0f, -14.0f }, { 26.0f, -4.0f }, { 26.0f, 4.0f }, { 26.0f, 14.0f },
+        { 14.0f, -8.0f }, { 14.0f, 8.0f }
+    };
+
+    const int n = (int)(sizeof(L) / sizeof(L[0]));
+    for (int i = 0; i < n; i++) {
+        drawPlayer(L[i][0], L[i][1], 0);
+        drawPlayer(R[i][0], R[i][1], 1);
     }
 }
 
@@ -267,6 +339,8 @@ static void display(void) {
     drawGoalNet(-52.5f, -54.5f);
     drawGoalNet(52.5f, 54.5f);
 
+    drawPlayers();
+
     // Sombra da bola no gramado.
     glColor3f(0.05f, 0.08f, 0.05f);
     drawFilledCircle(ballX + 0.15f, ballY - 0.20f, ballR * 0.95f, 30);
@@ -284,20 +358,52 @@ static void display(void) {
     glLineWidth(1.0f);
     drawCircle(ballX, ballY, ballR, 42);
 
-    // Placar
+    /* Placar centralizado no topo da janela (coordenadas em pixels). */
     {
         char scoreText[32];
         snprintf(scoreText, sizeof(scoreText), "%d  x  %d", scoreLeft, scoreRight);
+        int w = g_winW;
+        int h = g_winH;
+        if (w < 1) w = 1;
+        if (h < 1) h = 1;
+
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        glOrtho(0.0, (double)w, 0.0, (double)h, -1.0, 1.0);
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+
+        const int panelW = 240;
+        const int panelH = 46;
+        const int marginTop = 14;
+        int px = w / 2 - panelW / 2;
+        int py = h - marginTop - panelH;
+
         glColor3f(0.02f, 0.02f, 0.02f);
-        drawFilledRect(-8.5f, 34.8f, 8.5f, 38.8f);
+        drawFilledRect((float)px, (float)py, (float)(px + panelW), (float)(py + panelH));
+
+        int textW = glutBitmapLength(GLUT_BITMAP_HELVETICA_18,
+                                     reinterpret_cast<const unsigned char *>(scoreText));
+        int tx = px + (panelW - textW) / 2;
+        int ty = py + 15;
         glColor3f(1.0f, 1.0f, 1.0f);
-        drawText(-4.8f, 36.2f, scoreText);
+        drawTextPixels(tx, ty, scoreText);
+
+        glMatrixMode(GL_MODELVIEW);
+        glPopMatrix();
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
     }
 
     glutSwapBuffers();
 }
 
 static void reshape(int w, int h) {
+    g_winW = w;
+    g_winH = h;
     glViewport(0, 0, w, h);
 
     glMatrixMode(GL_PROJECTION);
@@ -322,6 +428,8 @@ static void moveBall(float dx, float dy) {
     const float fieldHalfH = 34.0f;
     const float goalHalfH = 3.66f;
     const float goalBackX = 54.5f;
+    const float prevX = ballX;
+    const float prevY = ballY;
 
     float nextY = clampf(ballY + dy, -fieldHalfH + ballR, fieldHalfH - ballR);
     float xLimit = (fabsf(nextY) <= goalHalfH) ? (goalBackX - ballR) : (fieldHalfW - ballR);
@@ -330,11 +438,14 @@ static void moveBall(float dx, float dy) {
     ballX = nextX;
     ballY = nextY;
 
+    int scored = 0;
+
     // Gol na esquerda: ponto para o time da direita.
     if (ballX < -fieldHalfW && fabsf(ballY) <= goalHalfH) {
         scoreRight++;
         ballX = 0.0f;
         ballY = 0.0f;
+        scored = 1;
     }
 
     // Gol na direita: ponto para o time da esquerda.
@@ -342,6 +453,13 @@ static void moveBall(float dx, float dy) {
         scoreLeft++;
         ballX = 0.0f;
         ballY = 0.0f;
+        scored = 1;
+    }
+
+    if (scored) {
+        audioPlayGoal();
+    } else if (ballX != prevX || ballY != prevY) {
+        audioPlayKick();
     }
 
     glutPostRedisplay();
@@ -411,8 +529,22 @@ static void timer(int value) {
 int main(int argc, char **argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(1200, 780);
+    const int winW = 1200;
+    const int winH = 780;
+    glutInitWindowSize(winW, winH);
+    {
+        int sw = glutGet(GLUT_SCREEN_WIDTH);
+        int sh = glutGet(GLUT_SCREEN_HEIGHT);
+        if (sw > 0 && sh > 0) {
+            glutInitWindowPosition((sw - winW) / 2, (sh - winH) / 2);
+        } else {
+            glutInitWindowPosition(80, 60);
+        }
+    }
     glutCreateWindow("Campo de Futebol - OpenGL + FreeGLUT");
+
+    audioInit();
+    atexit(audioShutdown);
 
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);

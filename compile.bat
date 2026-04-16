@@ -24,7 +24,7 @@ if not exist "%INCLUDE_FREEGLUT%\GL\freeglut.h" (
 )
 
 echo Compilando com MinGW...
-"%COMPILER%" -I"%INCLUDE_FREEGLUT%" "main.cpp" -L"%LIB_FREEGLUT%" -lfreeglut -lopengl32 -luser32 -o "%OUTPUT%"
+"%COMPILER%" -I"%INCLUDE_FREEGLUT%" "main.cpp" "audio.cpp" -L"%LIB_FREEGLUT%" -lfreeglut -lopengl32 -luser32 -lwinmm -lole32 -luuid -o "%OUTPUT%"
 
 if errorlevel 1 (
     echo Erro na compilacao!
