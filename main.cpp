@@ -114,7 +114,7 @@ static float clampf(float value, float minV, float maxV) {
 
 /* Atualiza as posições dos jogadores baseado na bola */
 static void updatePlayerPositions(void) {
-    const float playerSpeed = 0.08f;
+    const float playerSpeed = 0.09f;
     const float fieldHalfH = 34.0f;
     const float smallAreaHalfH = 5.5f;
     static float gameTime = 0.0f;
@@ -122,9 +122,7 @@ static void updatePlayerPositions(void) {
     
     for (int i = 0; i < 22; i++) {
         Player *p = &players[i];
-        float dx = ballX - p->baseX;
-        float dy = ballY - p->baseY;
-        float dist = sqrtf(dx * dx + dy * dy);
+        const float teamDir = (p->team == 0) ? 1.0f : -1.0f;
         float targetX, targetY;
         
         if (p->team == 0) {
@@ -135,9 +133,11 @@ static void updatePlayerPositions(void) {
                 p->y = clampf(ballY, -smallAreaHalfH, smallAreaHalfH);
             }
             else if (p->position >= 1 && p->position <= 4) {
-                /* DEFESA: segue a bola mas fica recuado */
-                targetX = p->baseX + (ballX - 0.0f) * 0.15f;
-                targetY = p->baseY + (ballY - p->baseY) * 0.5f + sinf(gameTime * 1.5f + p->position) * 2.0f;
+                /* DEFESA: acompanha para dar cobertura atrás da bola. */
+                float coverOffset = 18.0f + (float)(p->position - 1) * 1.0f;
+                targetX = ballX - teamDir * coverOffset;
+                if (targetX < p->baseX) targetX = p->baseX;
+                targetY = p->baseY + (ballY - p->baseY) * 0.55f + sinf(gameTime * 1.4f + (float)p->position) * 1.4f;
                 
                 targetX = clampf(targetX, -52.5f, 5.0f);
                 targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
@@ -146,16 +146,11 @@ static void updatePlayerPositions(void) {
                 p->y += (targetY - p->y) * playerSpeed * 1.2f;
             }
             else if (p->position >= 5 && p->position <= 8) {
-                /* MEIO-CAMPO: avança quando bola está no meio ou ataque */
-                if (ballX > -5.0f) {
-                    /* Bola saiu do fundo: avança MAIS */
-                    targetX = p->baseX + 18.0f;
-                } else {
-                    /* Bola em defesa: fica mais recuado */
-                    targetX = p->baseX + 5.0f;
-                }
-                
-                targetY = p->baseY + (ballY - p->baseY) * 0.8f + cosf(gameTime * 2.2f + p->position) * 7.0f;
+                /* MEIO: oferece linha de passe sempre atrás da bola. */
+                float supportOffset = 10.0f + (float)(p->position - 5) * 0.8f;
+                targetX = ballX - teamDir * supportOffset;
+                if (targetX < p->baseX - 2.0f) targetX = p->baseX - 2.0f;
+                targetY = p->baseY + (ballY - p->baseY) * 0.72f + cosf(gameTime * 1.9f + (float)p->position) * 2.1f;
                 targetX = clampf(targetX, -40.0f, 38.0f);
                 targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
                 
@@ -163,25 +158,15 @@ static void updatePlayerPositions(void) {
                 p->y += (targetY - p->y) * playerSpeed * 1.6f;
             }
             else if (p->position >= 9 && p->position <= 10) {
-                /* ATACANTES: AVANÇAM MUITO quando bola está em zona de ataque */
-                if (ballX > 5.0f) {
-                    /* Bola está no ataque: AVANÇA MUITO para dentro da área */
-                    targetX = p->baseX + 30.0f;  /* Avanço agressivo! */
-                    targetY = p->baseY + (ballY - p->baseY) * 0.7f + sinf(gameTime * 3.5f) * 8.0f;
-                } else if (ballX > -15.0f) {
-                    /* Bola no meio: avança moderadamente */
-                    targetX = p->baseX + 18.0f;
-                    targetY = p->baseY + (ballY - p->baseY) * 0.7f + cosf(gameTime * 2.5f) * 5.0f;
-                } else {
-                    /* Bola em defesa: volta para base */
-                    targetX = p->baseX + 5.0f;
-                    targetY = p->baseY + sinf(gameTime * 2.0f) * 4.0f;
-                }
-                
+                /* ATACANTES: pressionam mais perto da bola sem ultrapassar demais. */
+                float pressOffset = 5.2f + (float)(p->position - 9) * 1.2f;
+                targetX = ballX - teamDir * pressOffset;
+                if (targetX < p->baseX) targetX = p->baseX;
+                targetY = p->baseY + (ballY - p->baseY) * 0.65f + sinf(gameTime * 2.3f + (float)p->position) * 1.6f;
                 targetX = clampf(targetX, -18.0f, 52.0f);
                 targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
                 
-                p->x += (targetX - p->x) * playerSpeed * 2.0f;  /* Mais rápido! */
+                p->x += (targetX - p->x) * playerSpeed * 2.0f;
                 p->y += (targetY - p->y) * playerSpeed * 2.0f;
             }
         }
@@ -194,8 +179,10 @@ static void updatePlayerPositions(void) {
             }
             else if (p->position >= 1 && p->position <= 4) {
                 /* DEFESA */
-                targetX = p->baseX + (ballX - 0.0f) * 0.15f;
-                targetY = p->baseY + (ballY - p->baseY) * 0.5f + sinf(gameTime * 1.5f + p->position) * 2.0f;
+                float coverOffset = 18.0f + (float)(p->position - 1) * 1.0f;
+                targetX = ballX - teamDir * coverOffset;
+                if (targetX > p->baseX) targetX = p->baseX;
+                targetY = p->baseY + (ballY - p->baseY) * 0.55f + sinf(gameTime * 1.4f + (float)p->position) * 1.4f;
                 
                 targetX = clampf(targetX, -5.0f, 52.5f);
                 targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
@@ -205,15 +192,10 @@ static void updatePlayerPositions(void) {
             }
             else if (p->position >= 5 && p->position <= 8) {
                 /* MEIO-CAMPO */
-                if (ballX < 5.0f) {
-                    /* Bola saiu do fundo: avança MAIS */
-                    targetX = p->baseX - 18.0f;
-                } else {
-                    /* Bola em defesa: fica mais recuado */
-                    targetX = p->baseX - 5.0f;
-                }
-                
-                targetY = p->baseY + (ballY - p->baseY) * 0.8f + cosf(gameTime * 2.2f + p->position) * 7.0f;
+                float supportOffset = 10.0f + (float)(p->position - 5) * 0.8f;
+                targetX = ballX - teamDir * supportOffset;
+                if (targetX > p->baseX + 2.0f) targetX = p->baseX + 2.0f;
+                targetY = p->baseY + (ballY - p->baseY) * 0.72f + cosf(gameTime * 1.9f + (float)p->position) * 2.1f;
                 targetX = clampf(targetX, -38.0f, 40.0f);
                 targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
                 
@@ -222,24 +204,14 @@ static void updatePlayerPositions(void) {
             }
             else if (p->position >= 9 && p->position <= 10) {
                 /* ATACANTES */
-                if (ballX < -5.0f) {
-                    /* Bola está no ataque: AVANÇA MUITO */
-                    targetX = p->baseX - 30.0f;  /* Avanço agressivo! */
-                    targetY = p->baseY + (ballY - p->baseY) * 0.7f + sinf(gameTime * 3.5f) * 8.0f;
-                } else if (ballX < 15.0f) {
-                    /* Bola no meio: avança moderadamente */
-                    targetX = p->baseX - 18.0f;
-                    targetY = p->baseY + (ballY - p->baseY) * 0.7f + cosf(gameTime * 2.5f) * 5.0f;
-                } else {
-                    /* Bola em defesa: volta para base */
-                    targetX = p->baseX - 5.0f;
-                    targetY = p->baseY + sinf(gameTime * 2.0f) * 4.0f;
-                }
-                
+                float pressOffset = 5.2f + (float)(p->position - 9) * 1.2f;
+                targetX = ballX - teamDir * pressOffset;
+                if (targetX > p->baseX) targetX = p->baseX;
+                targetY = p->baseY + (ballY - p->baseY) * 0.65f + sinf(gameTime * 2.3f + (float)p->position) * 1.6f;
                 targetX = clampf(targetX, -52.0f, 18.0f);
                 targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
                 
-                p->x += (targetX - p->x) * playerSpeed * 2.0f;  /* Mais rápido! */
+                p->x += (targetX - p->x) * playerSpeed * 2.0f;
                 p->y += (targetY - p->y) * playerSpeed * 2.0f;
             }
         }
