@@ -12,6 +12,8 @@
 
 static ma_engine g_engine;
 static int g_engine_ok;
+static ma_sound g_crowd_sound;
+static int g_crowd_playing = 0;
 
 static int file_exists(const char *path) {
     FILE *f = fopen(path, "rb");
@@ -66,6 +68,10 @@ void audioInit(void) {
 }
 
 void audioShutdown(void) {
+    if (g_crowd_playing) {
+        ma_sound_uninit(&g_crowd_sound);
+        g_crowd_playing = 0;
+    }
     if (g_engine_ok) {
         ma_engine_uninit(&g_engine);
         g_engine_ok = 0;
@@ -96,4 +102,35 @@ void audioPlayGoal(void) {
         return;
     }
     ma_engine_play_sound(&g_engine, path, NULL);
+}
+
+void audioPlayCrowd(void) {
+    char path[768];
+    ma_result r;
+
+    if (!g_engine_ok || g_crowd_playing) {
+        return;
+    }
+    resolve_sound_path(path, sizeof(path), "crowd.wav");
+    if (path[0] == '\0') {
+        fprintf(stderr, "audio: crowd.wav nao encontrado\n");
+        return;
+    }
+    r = ma_sound_init_from_file(&g_engine, path, MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC, NULL, NULL, &g_crowd_sound);
+    if (r != MA_SUCCESS) {
+        fprintf(stderr, "audio: ma_sound_init_from_file falhou para crowd.wav (%d)\n", (int)r);
+        return;
+    }
+    ma_sound_set_looping(&g_crowd_sound, 1);
+    ma_sound_set_volume(&g_crowd_sound, 0.15f);
+    ma_sound_start(&g_crowd_sound);
+    g_crowd_playing = 1;
+}
+
+void audioStopCrowd(void) {
+    if (g_crowd_playing) {
+        ma_sound_stop(&g_crowd_sound);
+        ma_sound_uninit(&g_crowd_sound);
+        g_crowd_playing = 0;
+    }
 }

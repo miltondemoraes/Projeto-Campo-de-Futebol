@@ -7,6 +7,16 @@
 
 #define PI 3.14159265358979323846f
 
+/* Estrutura para representar um jogador dinâmico */
+typedef struct {
+    float baseX, baseY;    /* Posição base (inicial) */
+    float x, y;            /* Posição atual dinâmica */
+    int team;              /* 0 = esquerda, 1 = direita */
+    int position;          /* 0=goleiro, 1-4=defesa, 5-8=meio, 9-10=ataque */
+} Player;
+
+static Player players[22];  /* 11 por time */
+
 static float ballX = 0.0f;
 static float ballY = 0.0f;
 static const float ballR = 1.2f;
@@ -17,10 +27,185 @@ static float crowdPhase = 0.0f;
 static int g_winW = 1200;
 static int g_winH = 780;
 
+/* Inicializa os jogadores com suas posições base */
+static void initializePlayers(void) {
+    int idx = 0;
+    
+    /* Time da esquerda (ataca para a direita) */
+    const float L[][2] = {
+        { -46.5f, 0.0f },   /* 0: goleiro */
+        { -38.0f, -16.0f }, { -38.0f, -5.5f }, { -38.0f, 5.5f }, { -38.0f, 16.0f }, /* 1-4: defesa */
+        { -35.0f, -14.0f }, { -35.0f, -4.0f }, { -35.0f, 4.0f }, { -35.0f, 14.0f }, /* 5-8: meio */
+        { -14.0f, -8.0f }, { -14.0f, 8.0f }  /* 9-10: ataque */
+    };
+    
+    for (int i = 0; i < 11; i++) {
+        players[idx].baseX = L[i][0];
+        players[idx].baseY = L[i][1];
+        players[idx].x = L[i][0];
+        players[idx].y = L[i][1];
+        players[idx].team = 0;
+        players[idx].position = i;
+        idx++;
+    }
+    
+    /* Time da direita (ataca para a esquerda) */
+    const float R[][2] = {
+        { 46.5f, 0.0f },
+        { 38.0f, -16.0f }, { 38.0f, -5.5f }, { 38.0f, 5.5f }, { 38.0f, 16.0f },
+        { 35.0f, -30.0f }, { 35.0f, -15.0f }, { 35.0f, 15.0f }, { 35.0f, 30.0f },
+        { 14.0f, -8.0f }, { 14.0f, 8.0f }
+    };
+    
+    for (int i = 0; i < 11; i++) {
+        players[idx].baseX = R[i][0];
+        players[idx].baseY = R[i][1];
+        players[idx].x = R[i][0];
+        players[idx].y = R[i][1];
+        players[idx].team = 1;
+        players[idx].position = i;
+        idx++;
+    }
+}
+
 static float clampf(float value, float minV, float maxV) {
     if (value < minV) return minV;
     if (value > maxV) return maxV;
     return value;
+}
+
+/* Atualiza as posições dos jogadores baseado na bola */
+static void updatePlayerPositions(void) {
+    const float playerSpeed = 0.08f;
+    const float fieldHalfH = 34.0f;
+    const float smallAreaHalfH = 5.5f;
+    static float gameTime = 0.0f;
+    gameTime += 0.016f;
+    
+    for (int i = 0; i < 22; i++) {
+        Player *p = &players[i];
+        float dx = ballX - p->baseX;
+        float dy = ballY - p->baseY;
+        float dist = sqrtf(dx * dx + dy * dy);
+        float targetX, targetY;
+        
+        if (p->team == 0) {
+            /* Time esquerda (ataca para direita) */
+            if (p->position == 0) {
+                /* Goleiro se move só em Y, fica em X = -47 */
+                p->x = -47.0f;
+                p->y = clampf(ballY, -smallAreaHalfH, smallAreaHalfH);
+            }
+            else if (p->position >= 1 && p->position <= 4) {
+                /* DEFESA: segue a bola mas fica recuado */
+                targetX = p->baseX + (ballX - 0.0f) * 0.15f;
+                targetY = p->baseY + (ballY - p->baseY) * 0.5f + sinf(gameTime * 1.5f + p->position) * 2.0f;
+                
+                targetX = clampf(targetX, -52.5f, 5.0f);
+                targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
+                
+                p->x += (targetX - p->x) * playerSpeed * 1.2f;
+                p->y += (targetY - p->y) * playerSpeed * 1.2f;
+            }
+            else if (p->position >= 5 && p->position <= 8) {
+                /* MEIO-CAMPO: avança quando bola está no meio ou ataque */
+                if (ballX > -5.0f) {
+                    /* Bola saiu do fundo: avança MAIS */
+                    targetX = p->baseX + 18.0f;
+                } else {
+                    /* Bola em defesa: fica mais recuado */
+                    targetX = p->baseX + 5.0f;
+                }
+                
+                targetY = p->baseY + (ballY - p->baseY) * 0.8f + cosf(gameTime * 2.2f + p->position) * 7.0f;
+                targetX = clampf(targetX, -40.0f, 38.0f);
+                targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
+                
+                p->x += (targetX - p->x) * playerSpeed * 1.6f;
+                p->y += (targetY - p->y) * playerSpeed * 1.6f;
+            }
+            else if (p->position >= 9 && p->position <= 10) {
+                /* ATACANTES: AVANÇAM MUITO quando bola está em zona de ataque */
+                if (ballX > 5.0f) {
+                    /* Bola está no ataque: AVANÇA MUITO para dentro da área */
+                    targetX = p->baseX + 30.0f;  /* Avanço agressivo! */
+                    targetY = p->baseY + (ballY - p->baseY) * 0.7f + sinf(gameTime * 3.5f) * 8.0f;
+                } else if (ballX > -15.0f) {
+                    /* Bola no meio: avança moderadamente */
+                    targetX = p->baseX + 18.0f;
+                    targetY = p->baseY + (ballY - p->baseY) * 0.7f + cosf(gameTime * 2.5f) * 5.0f;
+                } else {
+                    /* Bola em defesa: volta para base */
+                    targetX = p->baseX + 5.0f;
+                    targetY = p->baseY + sinf(gameTime * 2.0f) * 4.0f;
+                }
+                
+                targetX = clampf(targetX, -18.0f, 52.0f);
+                targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
+                
+                p->x += (targetX - p->x) * playerSpeed * 2.0f;  /* Mais rápido! */
+                p->y += (targetY - p->y) * playerSpeed * 2.0f;
+            }
+        }
+        else {
+            /* Time direita (ataca para esquerda) */
+            if (p->position == 0) {
+                /* Goleiro */
+                p->x = 47.0f;
+                p->y = clampf(ballY, -smallAreaHalfH, smallAreaHalfH);
+            }
+            else if (p->position >= 1 && p->position <= 4) {
+                /* DEFESA */
+                targetX = p->baseX + (ballX - 0.0f) * 0.15f;
+                targetY = p->baseY + (ballY - p->baseY) * 0.5f + sinf(gameTime * 1.5f + p->position) * 2.0f;
+                
+                targetX = clampf(targetX, -5.0f, 52.5f);
+                targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
+                
+                p->x += (targetX - p->x) * playerSpeed * 1.2f;
+                p->y += (targetY - p->y) * playerSpeed * 1.2f;
+            }
+            else if (p->position >= 5 && p->position <= 8) {
+                /* MEIO-CAMPO */
+                if (ballX < 5.0f) {
+                    /* Bola saiu do fundo: avança MAIS */
+                    targetX = p->baseX - 18.0f;
+                } else {
+                    /* Bola em defesa: fica mais recuado */
+                    targetX = p->baseX - 5.0f;
+                }
+                
+                targetY = p->baseY + (ballY - p->baseY) * 0.8f + cosf(gameTime * 2.2f + p->position) * 7.0f;
+                targetX = clampf(targetX, -38.0f, 40.0f);
+                targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
+                
+                p->x += (targetX - p->x) * playerSpeed * 1.6f;
+                p->y += (targetY - p->y) * playerSpeed * 1.6f;
+            }
+            else if (p->position >= 9 && p->position <= 10) {
+                /* ATACANTES */
+                if (ballX < -5.0f) {
+                    /* Bola está no ataque: AVANÇA MUITO */
+                    targetX = p->baseX - 30.0f;  /* Avanço agressivo! */
+                    targetY = p->baseY + (ballY - p->baseY) * 0.7f + sinf(gameTime * 3.5f) * 8.0f;
+                } else if (ballX < 15.0f) {
+                    /* Bola no meio: avança moderadamente */
+                    targetX = p->baseX - 18.0f;
+                    targetY = p->baseY + (ballY - p->baseY) * 0.7f + cosf(gameTime * 2.5f) * 5.0f;
+                } else {
+                    /* Bola em defesa: volta para base */
+                    targetX = p->baseX - 5.0f;
+                    targetY = p->baseY + sinf(gameTime * 2.0f) * 4.0f;
+                }
+                
+                targetX = clampf(targetX, -52.0f, 18.0f);
+                targetY = clampf(targetY, -fieldHalfH, fieldHalfH);
+                
+                p->x += (targetX - p->x) * playerSpeed * 2.0f;  /* Mais rápido! */
+                p->y += (targetY - p->y) * playerSpeed * 2.0f;
+            }
+        }
+    }
 }
 
 static void drawFilledRect(float x1, float y1, float x2, float y2) {
@@ -136,25 +321,9 @@ static void drawPlayer(float x, float y, int team) {
 }
 
 static void drawPlayers(void) {
-    /* Time da esquerda (ataca para a direita) */
-    const float L[][2] = {
-        { -46.5f, 0.0f },   /* goleiro */
-        { -38.0f, -16.0f }, { -38.0f, -5.5f }, { -38.0f, 5.5f }, { -38.0f, 16.0f }, /* defesa */
-        { -26.0f, -14.0f }, { -26.0f, -4.0f }, { -26.0f, 4.0f }, { -26.0f, 14.0f }, /* meio */
-        { -14.0f, -8.0f }, { -14.0f, 8.0f }  /* ataque */
-    };
-    /* Time da direita */
-    const float R[][2] = {
-        { 46.5f, 0.0f },
-        { 38.0f, -16.0f }, { 38.0f, -5.5f }, { 38.0f, 5.5f }, { 38.0f, 16.0f },
-        { 26.0f, -14.0f }, { 26.0f, -4.0f }, { 26.0f, 4.0f }, { 26.0f, 14.0f },
-        { 14.0f, -8.0f }, { 14.0f, 8.0f }
-    };
-
-    const int n = (int)(sizeof(L) / sizeof(L[0]));
-    for (int i = 0; i < n; i++) {
-        drawPlayer(L[i][0], L[i][1], 0);
-        drawPlayer(R[i][0], R[i][1], 1);
+    int i;
+    for (i = 0; i < 22; i++) {
+        drawPlayer(players[i].x, players[i].y, players[i].team);
     }
 }
 
@@ -522,6 +691,7 @@ static void timer(int value) {
     if (crowdPhase > 2.0f * PI) {
         crowdPhase -= 2.0f * PI;
     }
+    updatePlayerPositions();
     glutPostRedisplay();
     glutTimerFunc(16, timer, 0);
 }
@@ -544,6 +714,8 @@ int main(int argc, char **argv) {
     glutCreateWindow("Campo de Futebol - OpenGL + FreeGLUT");
 
     audioInit();
+    initializePlayers();
+    audioPlayCrowd();
     atexit(audioShutdown);
 
     glutDisplayFunc(display);
